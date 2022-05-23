@@ -21,8 +21,31 @@ To manage each revision, a Database has been created; below the the creation of 
     esito CHAR(1) NOT NULL,
     PRIMARY KEY(targa, data_revisione)
     );
+***
+## String to sql.Date converter
+Because the Database contains a `Date` value, and because it made the code easier to read, a converter class has been created.
+
+This class converts a String (either taken from the URL or Parsed from an XML file) and converts it to a sql.Date value in order to work with the Database.
+
+Source coude is viewable down below, or in its repository folder.
+
+    public class Converter {
+    
+    public Converter(){}
+    
+    public java.sql.Date stringToDate(String date){
+        java.sql.Date sqlDate = null;
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+        try{
+            java.util.Date uDate = format.parse(date);
+            sqlDate = new java.sql.Date(uDate.getTime());
+        }catch(ParseException exception){}
+        return sqlDate;
+        }
+    }
 
 ***
+## Commands
 ## Seek cars with an expiring revision
 The API call (executed in GET) returns an XML file which stores every car with an expiring revision. 
 
@@ -79,7 +102,7 @@ The API call (executed in GET) returns an XML file which stores every available 
 ### Parameters
 1. `plate`
     * The plate of the given car.
-### XML
+### XML and errors
 Example of API response in case of success:
 
     <revision>
@@ -119,36 +142,32 @@ The request has no visible parameters, however, an XML file containing every dat
 For context, the table's primary key is the `(targa, data_revisione)` pair.
 ***
 ## CRUD Operations
-It is possible to perform CRUD operations on the database, however those are still under development.
+**It is possible to perform CRUD operations on the database, however those are still under development.**
+## Insert (or Create)
+The API call (executed in POST) inserts a new revision inside the database.
 
-The only existing function is "DELETE", which is still commented in the source:
+>http://localhost:8080/CarManager/Servlet/Insert
 
-    @Override
-    protected void doDelete(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException{
-        if(connection == null){
-            response.sendError(500, "Unable to connect to specified database.\r\n");
-            return;
-        }
-        
-        String[] sel = request.getRequestURL().toString().split("/");
-        String end = sel[sel.length - 1];
-        
-        if(end.equalsIgnoreCase("Delete")){
-            String plate = request.getParameter("plate");
-            if(plate == null || plate.isBlank()){
-                response.sendError(400, "Missing parameter.\r\n");
-                return;
-            }
-            try{
-                String query = "DELETE FROM revisioni WHERE targa = '" + plate + "';";
-                PreparedStatement ps = connection.prepareStatement(query);
-                if(ps.executeUpdate() > 0)
-                    response.setStatus(200);
-                else
-                    response.sendError(400, "Missing plate.\r\n");
-            ps.close();
-            }catch(SQLException exception){ response.sendError(500, "Unable to execute 'DELETE' operation.\r\n"); }
-        }
-    }
+No visible parameter is needed, however a user should send an XML body containing right and coherent data.
+
+## XML and errors
+Response in case of success provides no XML body, it does provide a:
+
+`200` status code however.
+
+Respose in case of failure:
+
+`400 - BAD REQUEST` if the one or more parameter(s) are still missing after parsing the XML body sent.
+
+`500 - INTERNAL SERVER ERROR` if the connection to the database fails for whichever reason.
+***
+## Retreive (or Read)
+Not available yet.
+***
+## Update (or Edit)
+Not available yet.
+***
+## Delete
+Not available yet.
 ***
 Further methods, operations and bug-fixes will be included over time.

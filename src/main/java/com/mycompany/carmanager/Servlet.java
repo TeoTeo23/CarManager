@@ -11,11 +11,13 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Date;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest; import jakarta.servlet.http.HttpServletResponse;
 import java.sql.Statement;
-import javax.ws.rs.core.Response;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -64,6 +66,11 @@ public class Servlet extends HttpServlet {
         String url = request.getRequestURL().toString();
         String[] sel = url.split("/");
         String end = sel[sel.length - 1];
+        
+        if(url.equalsIgnoreCase("http://localhost:8080/CarManager/Servlet")){
+            response.sendError(400, "Missing parameters.\r\n");
+            return;
+        }
         
         if(end.equalsIgnoreCase("Expiring")){
         String startDate = request.getParameter("start");
@@ -206,59 +213,71 @@ public class Servlet extends HttpServlet {
         String url = request.getRequestURL().toString();
         String[] sel = url.split("/");
         String end = sel[sel.length - 1];
-        
-        if(end.equalsIgnoreCase("register")){
-            String plate = "", revDate = "", matricolation = "", esit = "";
+        Converter converter = new Converter();
+      
+        if(end.equalsIgnoreCase("new")){
+            String plate = "", revDate = "", esit = "";
+            int matricolation = -1, expireMonth = -1, expireYear = -1;
+            
             try{
-                // Parse XML to retreive data
-                DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-                DocumentBuilder bld = dbf.newDocumentBuilder();
-                Document doc = bld.parse(request.getInputStream());
+                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                DocumentBuilder builder = factory.newDocumentBuilder();
+                Document doc = builder.parse(request.getInputStream());
                 Element root = doc.getDocumentElement();
+                NodeList plateList, revDateList, esitList, matricolationList, expireMonthList, expireYearList;
                 
-                NodeList plateList, revDateList, matricolationList, esitList;
-                plateList = root.getElementsByTagName("targa");
-                if(plateList != null && plateList.getLength() > 0) plate = plateList.item(0).getTextContent();
-                revDateList = root.getElementsByTagName("data_revisione");
-                if(revDateList != null && revDateList.getLength() > 0) revDate = revDateList.item(0).getTextContent();
-                matricolationList = root.getElementsByTagName("anno_immatricolazione");
-                if(matricolationList != null && matricolationList.getLength() > 0) matricolation = matricolationList.item(0).getTextContent();
-                esitList = root.getElementsByTagName("esito");
-                if(esitList != null && esitList.getLength() > 0) esit = esitList.item(0).getTextContent();
+                plateList = root.getElementsByTagName("plate");
+                if(plateList != null && plateList.getLength() > 0)
+                    plate = plateList.item(0).getTextContent();
                 
-                // check if String content is OK
-                if(plate.isBlank() || revDate.isBlank() || matricolation.isBlank() || esit.isBlank())
-                    response.sendError(400, "Unable to retreive data from XML.\r\nOne or more String(s) contain(s) no data.\r\n");
-                // expire date = expire year + 2
-                // Splitting revisionDate to get data to increment year by two to get expire and month year.
-                String[] desect = revDate.split("-");
-                String year = desect[0], month = desect[1];
-                int parseYear = (Integer.parseInt(year) + 2);
-                String newYearExpireTime = String.valueOf(parseYear);
-                String monthExpireTime = month;
+                revDateList = root.getElementsByTagName("revDate");
+                if(revDateList != null && revDateList.getLength() > 0)
+                    revDate = revDateList.item(0).getTextContent();
                 
-                // Working on jdbc database
-                String insert = "INSERT INTO revisioni (targa, anno_immatricolazione, data_revisione, mese_scadenza, anno_scadenza, esito) VALUES (?, ?, ?, ?, ?, ?);";
-                PreparedStatement ps =  connection.prepareStatement(insert);
-                ps.setString(1, plate);
-                ps.setString(2, matricolation);
-                ps.setString(3, revDate);
-                ps.setString(4, monthExpireTime);
-                ps.setString(5, newYearExpireTime);
-                ps.setString(6, esit);
+                esitList = root.getElementsByTagName("esit");
+                if(esitList != null && esitList.getLength() > 0)
+                    esit = esitList.item(0).getTextContent();
                 
-                if(ps.executeUpdate() == 0){
-                    response.sendError(500, "Unable to insert data in db.\r\n");
+                matricolationList = root.getElementsByTagName("matricolation");
+                if(matricolationList != null && matricolationList.getLength() > 0)
+                    matricolation = Integer.parseInt(matricolationList.item(0).getTextContent());
+                
+                expireMonthList = root.getElementsByTagName("expireMonth");
+                if(expireMonthList != null && expireMonthList.getLength() > 0)
+                    expireMonth = Integer.parseInt(expireMonthList.item(0).getTextContent());
+                
+                expireYearList = root.getElementsByTagName("expireYear");
+                if(expireYearList != null && expireYearList.getLength() > 0)
+                    expireYear = Integer.parseInt(expireMonthList.item(0).getTextContent());
+                
+                if(plate.isBlank() || revDate.isBlank() || esit.isBlank() || matricolation == - 1 || expireMonth == -1 || expireYear == -1){
+                    response.sendError(400, "Missing parameter(s).\r\n");
                     return;
                 }
-                response.setStatus(200);
-                ps.close();
-            }catch(SAXException | ParserConfigurationException exception){ response.sendError(400, "Missing data in XML body.\r\n"); }
-            catch(SQLException exception){ response.sendError(500, "Unable to execute operation 'REGISTER'.\r\n"); }
-        }
+                
+                // Convert Int to SQL date
+                java.sql.Date date = converter.stringToDate(revDate);
+                String query = "INSERT INTO revisioni(targa, anno_immatricolazione, data_revisione, mese_scadenza, anno_scadenza, esito) VALUES(?, ?, ?, ?, ?, ?);";
+                try (PreparedStatement ps = connection.prepareStatement(query)) {
+                    ps.setString(1, plate);
+                    ps.setInt(2, matricolation);
+                    ps.setDate(3, date);
+                    ps.setInt(4, expireMonth);
+                    ps.setInt(5, expireYear);
+                    ps.setString(6, esit);
+                    System.out.println(ps.toString());
+                    if(ps.executeUpdate() == 0){
+                        response.sendError(500, "Insertion failed.\r\n");
+                        return;
+                    }
+                    response.setStatus(200);
+                }
+            }catch(ParserConfigurationException | SAXException exception){ response.sendError(400, "Malformed XML.\r\n"); }
+            catch(SQLException exception){ response.sendError(500, "Unable to execute operation 'INSERT'"); }
+        }else
+            response.sendError(400, "Error in requesting command.\r\n");
     }
     
-   /* 
     @Override
     protected void doDelete(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException{
         if(connection == null){
@@ -280,13 +299,16 @@ public class Servlet extends HttpServlet {
                 PreparedStatement ps = connection.prepareStatement(query);
                 if(ps.executeUpdate() > 0)
                     response.setStatus(200);
-                else
+                else{
                     response.sendError(400, "Missing plate.\r\n");
+                    return;
+                }
             ps.close();
+            connection.close();
             }catch(SQLException exception){ response.sendError(500, "Unable to execute 'DELETE' operation.\r\n"); }
         }
     }
-    */
+    
     
     @Override
     public void destroy(){
@@ -305,5 +327,4 @@ public class Servlet extends HttpServlet {
     public String getServletInfo() {
         return "Short description";
     }// </editor-fold>
-
 }
